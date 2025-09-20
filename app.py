@@ -107,31 +107,44 @@ def home():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    # Refresh Docker workspace statuses
-    for ws in Workspace.query.filter_by(user_id=current_user.id):
+    # Refresh Docker workspace statuses (isolated per-workspace using -p)
+    user_workspaces = Workspace.query.filter_by(user_id=current_user.id).all()
+
+    for ws in user_workspaces:
+        # guard: ensure we have a filename
+        if not getattr(ws, "yaml_filename", None):
+            continue
+
         path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
-        if os.path.exists(path):
-            try:
-                result = subprocess.run(
-                    ["docker-compose", "-f", path, "ps", "-q"],
-                    capture_output=True, text=True,
-                    cwd=os.path.dirname(path)
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    if ws.status != "running":
-                        ws.status = "running"
-                        db.session.commit()
-                else:
-                    if ws.status != "stopped":
-                        ws.status = "stopped"
-                        db.session.commit()
-            except Exception as e:
-                current_app.logger.error(f"Error checking status for {ws.name}: {str(e)}")
-                if ws.status != "stopped":
-                    ws.status = "stopped"
-                    db.session.commit()
+        if not os.path.exists(path):
+            # If file missing, mark stopped (or keep as-is depending on your policy)
+            if ws.status != "stopped":
+                ws.status = "stopped"
+                db.session.commit()
+            continue
+
+        project_name = f"workspace_{ws.id}"
+        try:
+            result = subprocess.run(
+                ["docker-compose", "-p", project_name, "-f", path, "ps", "-q"],
+                capture_output=True, text=True,
+                cwd=os.path.dirname(path)
+            )
+            is_running = (result.returncode == 0 and result.stdout.strip() != "")
+            new_status = "running" if is_running else "stopped"
+            if ws.status != new_status:
+                ws.status = new_status
+                db.session.commit()
+        except Exception as e:
+            current_app.logger.error(f"Error checking status for {ws.name}: {str(e)}")
+            if ws.status != "stopped":
+                ws.status = "stopped"
+                db.session.commit()
+
+    # Render dashboard with fresh workspace list
     workspaces = Workspace.query.filter_by(user_id=current_user.id).all()
     return render_template("dashboard.html", workspaces=workspaces)
+
 
 
 # ============================================================
@@ -164,25 +177,32 @@ def run_workspace(id):
     if ws.user_id != current_user.id:
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
+
     path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
     if not os.path.exists(path):
         flash("Workspace file not found", "danger")
         return redirect(url_for("dashboard"))
+
+    project_name = f"workspace_{ws.id}"
     try:
         result = subprocess.run(
-            ["docker-compose", "-f", path, "up", "-d"],
-            capture_output=True, text=True, timeout=30
+            ["docker-compose", "-p", project_name, "-f", path, "up", "-d"],
+            capture_output=True, text=True, timeout=60,
+            cwd=os.path.dirname(path)
         )
         if result.returncode == 0:
             ws.status = "running"
             db.session.commit()
             flash("Workspace is running", "success")
         else:
+            current_app.logger.error(f"docker-compose up failed: {result.stderr}")
             flash(f"Failed: {result.stderr}", "danger")
     except subprocess.TimeoutExpired:
         flash("Timeout starting workspace", "warning")
     except Exception as e:
+        current_app.logger.error(f"Error starting workspace {ws.name}: {e}")
         flash(f"Error: {str(e)}", "danger")
+
     return redirect(url_for("dashboard"))
 
 @app.route("/workspace/stop/<int:id>")
@@ -192,26 +212,34 @@ def stop_workspace(id):
     if ws.user_id != current_user.id:
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
+
     path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
     if not os.path.exists(path):
         flash("Workspace file not found", "danger")
         return redirect(url_for("dashboard"))
+
+    project_name = f"workspace_{ws.id}"
     try:
         result = subprocess.run(
-            ["docker-compose", "-f", path, "down"],
-            capture_output=True, text=True, timeout=30
+            ["docker-compose", "-p", project_name, "-f", path, "down"],
+            capture_output=True, text=True, timeout=60,
+            cwd=os.path.dirname(path)
         )
         if result.returncode == 0:
             ws.status = "stopped"
             db.session.commit()
             flash("Workspace stopped", "info")
         else:
+            current_app.logger.error(f"docker-compose down failed: {result.stderr}")
             flash(f"Failed: {result.stderr}", "danger")
     except subprocess.TimeoutExpired:
         flash("Timeout stopping workspace", "warning")
     except Exception as e:
+        current_app.logger.error(f"Error stopping workspace {ws.name}: {e}")
         flash(f"Error: {str(e)}", "danger")
+
     return redirect(url_for("dashboard"))
+
 
 @app.route("/workspace/delete/<int:id>")
 @login_required
@@ -233,21 +261,27 @@ def refresh_workspace_status(id):
     if ws.user_id != current_user.id:
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
+
     path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
     if not os.path.exists(path):
         flash("Workspace file not found", "danger")
         return redirect(url_for("dashboard"))
+
+    project_name = f"workspace_{ws.id}"
     try:
         result = subprocess.run(
-            ["docker-compose", "-f", path, "ps", "-q"],
+            ["docker-compose", "-p", project_name, "-f", path, "ps", "-q"],
             capture_output=True, text=True, cwd=os.path.dirname(path)
         )
         ws.status = "running" if (result.returncode == 0 and result.stdout.strip()) else "stopped"
         db.session.commit()
         flash(f"Workspace is {ws.status}", "info")
     except Exception as e:
+        current_app.logger.error(f"Error checking status for {ws.name}: {e}")
         flash(f"Error checking status: {str(e)}", "danger")
+
     return redirect(url_for("dashboard"))
+
 
 
 # ============================================================

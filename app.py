@@ -1,20 +1,10 @@
-#!/usr/bin/env python3
-from flask import (
-    Flask, render_template, request, redirect, url_for,
-    flash, current_app
-)
+from flask import (Flask, render_template, request, redirect, url_for, flash, current_app)
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import (
-    LoginManager, UserMixin, login_user, logout_user,
-    login_required, current_user
-)
+from flask_login import (LoginManager, UserMixin, login_user, logout_user, login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import os, subprocess, uuid, yaml
 
-# ============================================================
-# Config
-# ============================================================
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY") or "your-secret-key-here"
     SQLALCHEMY_DATABASE_URI = "sqlite:///cloud_workspaces.db"
@@ -22,10 +12,6 @@ class Config:
     UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024
 
-
-# ============================================================
-# Database Models
-# ============================================================
 db = SQLAlchemy()
 
 class User(UserMixin, db.Model):
@@ -42,10 +28,6 @@ class Workspace(db.Model):
     status = db.Column(db.String(32), default="stopped")
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
 
-
-# ============================================================
-# Flask App + Login
-# ============================================================
 app = Flask(__name__)
 app.config.from_object(Config)
 
@@ -60,10 +42,6 @@ def load_user(user_id):
 with app.app_context():
     db.create_all()
 
-
-# ============================================================
-# Auth Routes
-# ============================================================
 @app.route("/auth/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
@@ -96,10 +74,6 @@ def logout():
     flash("Logged out", "info")
     return redirect(url_for("login"))
 
-
-# ============================================================
-# Main Routes
-# ============================================================
 @app.route("/")
 def home():
     return render_template("login.html", register=False)
@@ -107,17 +81,14 @@ def home():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    # Refresh Docker workspace statuses (isolated per-workspace using -p)
     user_workspaces = Workspace.query.filter_by(user_id=current_user.id).all()
 
     for ws in user_workspaces:
-        # guard: ensure we have a filename
         if not getattr(ws, "yaml_filename", None):
             continue
 
         path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
         if not os.path.exists(path):
-            # If file missing, mark stopped (or keep as-is depending on your policy)
             if ws.status != "stopped":
                 ws.status = "stopped"
                 db.session.commit()
@@ -141,15 +112,9 @@ def dashboard():
                 ws.status = "stopped"
                 db.session.commit()
 
-    # Render dashboard with fresh workspace list
     workspaces = Workspace.query.filter_by(user_id=current_user.id).all()
     return render_template("dashboard.html", workspaces=workspaces)
 
-
-
-# ============================================================
-# Workspace Routes
-# ============================================================
 @app.route("/workspace/create", methods=["GET", "POST"])
 @login_required
 def create_workspace():
@@ -282,11 +247,6 @@ def refresh_workspace_status(id):
 
     return redirect(url_for("dashboard"))
 
-
-
-# ============================================================
-# Resource Analysis + Cost Comparison
-# ============================================================
 def analyze_docker_compose_resources(yaml_path):
     try:
         with open(yaml_path, "r") as file:
@@ -377,9 +337,5 @@ def cost_comparison(id):
     return render_template("cost_comparison.html",
                            workspace=ws, resources=resources, cost_data=cost_data)
 
-
-# ============================================================
-# Run
-# ============================================================
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

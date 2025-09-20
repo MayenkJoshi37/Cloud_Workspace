@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Create Workspace{% endblock %}
+{% block content %}
+<h2>New Workspace</h2>
+<form method="post" enctype="multipart/form-data">
+  <div class="mb-3">
+    <label for="name" class="form-label">Workspace Name</label>
+    <input type="text" class="form-control" id="name" name="name" required>
+  </div>
+  <div class="mb-3">
+    <label for="yaml_file" class="form-label">Docker Compose YAML</label>
+    <input type="file" class="form-control" id="yaml_file" name="yaml_file" accept=".yaml,.yml" required>
+  </div>
+  <button type="submit" class="btn btn-primary">Create</button>
+</form>
+{% endblock %}

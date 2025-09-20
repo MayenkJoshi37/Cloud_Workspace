@@ -1,0 +1,14 @@
+name: cloud-workspaces
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - flask
+  - flask-login
+  - flask-sqlalchemy
+  - pyyaml
+  - sqlite
+  - pip:
+      - docker

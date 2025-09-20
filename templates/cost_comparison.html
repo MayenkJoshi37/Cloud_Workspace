@@ -2,255 +2,230 @@
 {% block title %}Cost Comparison - {{ workspace.name }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2><i class="fas fa-calculator"></i> Cost Comparison - {{ workspace.name }}</h2>
-                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
-                    <i class="fas fa-arrow-left"></i> Back to Dashboard
-                </a>
-            </div>
-        </div>
+<div class="space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="rounded-lg p-3 bg-gradient-to-tr from-primary-500 to-accent text-white shadow-soft-lg">
+        <i class="fa-solid fa-calculator"></i>
+      </div>
+      <div>
+        <h2 class="text-2xl font-semibold text-slate-900">Cost Comparison — <span class="text-slate-600 font-medium">{{ workspace.name }}</span></h2>
+        <p class="text-sm text-slate-500">Estimated monthly costs for recommended instances</p>
+      </div>
     </div>
 
-    <!-- Resource Analysis Section -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Resource Analysis</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-3">
-                            <div class="text-center">
-                                <h3 class="text-primary">{{ "%.1f"|format(resources.total_cpu) }}</h3>
-                                <p class="text-muted">Total CPU Cores</p>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center">
-                                <h3 class="text-success">{{ "%.1f"|format(resources.total_memory) }} GB</h3>
-                                <p class="text-muted">Total Memory</p>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center">
-                                <h3 class="text-info">{{ resources.total_storage }} GB</h3>
-                                <p class="text-muted">Estimated Storage</p>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="text-center">
-                                <h3 class="text-warning">{{ resources.services|length }}</h3>
-                                <p class="text-muted">Services</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    {% if resources.services %}
-                    <hr>
-                    <h6>Service Breakdown:</h6>
-                    <div class="table-responsive">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Service Name</th>
-                                    <th>CPU</th>
-                                    <th>Memory</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for service in resources.services %}
-                                <tr>
-                                    <td><code>{{ service.name }}</code></td>
-                                    <td>{{ "%.1f"|format(service.cpu) }} cores</td>
-                                    <td>{{ "%.1f"|format(service.memory) }} GB</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
+    <div class="flex gap-3">
+      <a href="{{ url_for('dashboard') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-white border border-slate-200 text-sm shadow-sm hover:shadow-md transition">
+        <i class="fa-solid fa-arrow-left text-slate-600"></i> Back to Dashboard
+      </a>
+    </div>
+  </div>
+
+  <!-- Resource Analysis -->
+  <section class="bg-white rounded-2xl p-6 shadow-sm">
+    <div class="flex items-start justify-between gap-6 flex-col lg:flex-row">
+      <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div class="text-sm text-slate-500">Total CPU</div>
+          <div class="mt-2 text-xl font-semibold text-primary-600">{{ "%.1f"|format(resources.total_cpu) }}</div>
         </div>
+
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div class="text-sm text-slate-500">Total Memory</div>
+          <div class="mt-2 text-xl font-semibold text-emerald-600">{{ "%.1f"|format(resources.total_memory) }} GB</div>
+        </div>
+
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div class="text-sm text-slate-500">Storage</div>
+          <div class="mt-2 text-xl font-semibold text-sky-600">{{ resources.total_storage }} GB</div>
+        </div>
+
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <div class="text-sm text-slate-500">Services</div>
+          <div class="mt-2 text-xl font-semibold text-amber-500">{{ resources.services|length }}</div>
+        </div>
+      </div>
+
+      {% if resources.services %}
+      <div class="w-full lg:w-1/3 mt-4 lg:mt-0">
+        <div class="text-sm text-slate-500">Service Breakdown</div>
+        <div class="mt-3 bg-gradient-to-br from-white to-slate-50 p-3 rounded-xl border border-slate-100 shadow-inner overflow-auto max-h-44">
+          <table class="w-full text-sm">
+            <thead class="text-slate-500 text-xs uppercase">
+              <tr>
+                <th class="text-left pb-2">Service</th>
+                <th class="text-right pb-2">CPU</th>
+                <th class="text-right pb-2">Memory</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for service in resources.services %}
+              <tr class="border-t border-slate-100">
+                <td class="py-2"><code class="text-xs bg-slate-100 px-2 py-0.5 rounded">{{ service.name }}</code></td>
+                <td class="py-2 text-right">{{ "%.1f"|format(service.cpu) }} cores</td>
+                <td class="py-2 text-right">{{ "%.1f"|format(service.memory) }} GB</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Providers Grid -->
+  <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+    {% for provider, data in cost_data.items() %}
+    <article class="bg-white rounded-2xl p-4 shadow-sm transform transition hover:-translate-y-2 hover:shadow-lg">
+      <header class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold text-slate-900">{{ data.name }}</h3>
+          <div class="mt-1 text-sm text-slate-500">Provider: <span class="uppercase font-medium">{{ provider }}</span></div>
+        </div>
+        <div class="flex flex-col items-end">
+          <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs">
+            <i class="fa-solid fa-server"></i> {{ data.instance_type.cpu }} CPU · {{ data.instance_type.memory }} GB
+          </span>
+          <span class="mt-3 text-2xl font-bold text-emerald-600">${{ "%.2f"|format(data.total_monthly) }}</span>
+          <span class="text-xs text-slate-400">/ month</span>
+        </div>
+      </header>
+
+      <div class="mt-4 space-y-3">
+        <!-- Cost breakdown -->
+        <div class="bg-slate-50 p-3 rounded-lg border border-slate-100 text-sm">
+          <div class="flex justify-between">
+            <div class="text-slate-600">Compute (24/7)</div>
+            <div class="font-medium">${{ "%.2f"|format(data.monthly_cost) }}</div>
+          </div>
+          <div class="flex justify-between mt-1">
+            <div class="text-slate-600">Storage</div>
+            <div class="font-medium">${{ "%.2f"|format(data.storage_cost) }}</div>
+          </div>
+          <hr class="my-2 border-slate-100">
+          <div class="flex justify-between text-slate-800 font-semibold">
+            <div>Total</div>
+            <div>${{ "%.2f"|format(data.total_monthly) }}</div>
+          </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex gap-2">
+          <button data-toggle="pros-{{ provider }}" class="js-toggle-pros flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm hover:bg-slate-50 transition">
+            <i class="fa-solid fa-thumbs-up text-emerald-500"></i> Pros
+          </button>
+          <button data-toggle="cons-{{ provider }}" class="js-toggle-cons flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm hover:bg-slate-50 transition">
+            <i class="fa-solid fa-exclamation-triangle text-amber-500"></i> Cons
+          </button>
+        </div>
+
+        <!-- Collapsible sections -->
+        <div id="pros-{{ provider }}" class="hidden mt-2 p-3 rounded-lg bg-gradient-to-r from-emerald-50 to-white border border-emerald-100 text-sm">
+          <ul class="list-inside list-disc text-emerald-700">
+            {% for pro in data.pros %}
+            <li>{{ pro }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div id="cons-{{ provider }}" class="hidden mt-2 p-3 rounded-lg bg-gradient-to-r from-amber-50 to-white border border-amber-100 text-sm">
+          <ul class="list-inside list-disc text-amber-700">
+            {% for con in data.cons %}
+            <li>{{ con }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <!-- Summary Section -->
+  <section class="bg-white rounded-2xl p-6 shadow-sm">
+    <h4 class="text-lg font-semibold text-slate-900 mb-3"><i class="fa-solid fa-chart-line mr-2 text-slate-500"></i> Cost Summary</h4>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <h6 class="text-sm text-slate-500">Most Cost-Effective</h6>
+        {% set cheapest = cost_data.values() | sort(attribute='total_monthly') | first %}
+        <div class="mt-2 p-3 rounded-lg bg-gradient-to-r from-emerald-50 to-white border border-emerald-100">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm text-slate-700 font-medium">{{ cheapest.name }}</div>
+              <div class="text-xs text-slate-500">Estimated per month</div>
+            </div>
+            <div class="text-xl font-bold text-emerald-600">${{ "%.2f"|format(cheapest.total_monthly) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h6 class="text-sm text-slate-500">Price Range</h6>
+        {% set most_expensive = cost_data.values() | sort(attribute='total_monthly') | last %}
+        <div class="mt-2 p-3 rounded-lg bg-gradient-to-r from-sky-50 to-white border border-sky-100">
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-slate-600">Range</div>
+            <div class="text-sm font-semibold text-slate-800">${{ "%.2f"|format(cheapest.total_monthly) }} — ${{ "%.2f"|format(most_expensive.total_monthly) }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Cost Comparison Section -->
-    <div class="row">
-        {% for provider, data in cost_data.items() %}
-        <div class="col-lg-6 col-xl-3 mb-4">
-            <div class="card h-100 cost-card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">{{ data.name }}</h6>
-                    <span class="badge badge-primary">{{ provider.upper() }}</span>
-                </div>
-                <div class="card-body">
-                    <!-- Pricing -->
-                    <div class="text-center mb-3">
-                        <h4 class="text-success">${{ "%.2f"|format(data.total_monthly) }}</h4>
-                        <small class="text-muted">per month</small>
-                    </div>
-                    
-                    <!-- Instance Details -->
-                    <div class="mb-3">
-                        <small class="text-muted">Recommended Instance:</small>
-                        <div class="mt-1">
-                            <span class="badge badge-light">{{ data.instance_type.cpu }} CPU</span>
-                            <span class="badge badge-light">{{ data.instance_type.memory }} GB RAM</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Cost Breakdown -->
-                    <div class="cost-breakdown">
-                        <div class="d-flex justify-content-between">
-                            <small>Compute (24/7):</small>
-                            <small>${{ "%.2f"|format(data.monthly_cost) }}</small>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <small>Storage:</small>
-                            <small>${{ "%.2f"|format(data.storage_cost) }}</small>
-                        </div>
-                        <hr class="my-2">
-                        <div class="d-flex justify-content-between font-weight-bold">
-                            <small>Total:</small>
-                            <small>${{ "%.2f"|format(data.total_monthly) }}</small>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-footer">
-                    <div class="row">
-                        <div class="col-6">
-                            <button class="btn btn-outline-primary btn-sm btn-block" 
-                                    data-toggle="collapse" 
-                                    data-target="#pros-{{ provider }}" 
-                                    aria-expanded="false">
-                                <i class="fas fa-thumbs-up"></i> Pros
-                            </button>
-                        </div>
-                        <div class="col-6">
-                            <button class="btn btn-outline-warning btn-sm btn-block" 
-                                    data-toggle="collapse" 
-                                    data-target="#cons-{{ provider }}" 
-                                    aria-expanded="false">
-                                <i class="fas fa-exclamation-triangle"></i> Cons
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Pros -->
-                    <div class="collapse mt-2" id="pros-{{ provider }}">
-                        <div class="card card-body card-sm">
-                            <ul class="list-unstyled mb-0">
-                                {% for pro in data.pros %}
-                                <li class="text-success">
-                                    <i class="fas fa-check-circle"></i> {{ pro }}
-                                </li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <!-- Cons -->
-                    <div class="collapse mt-2" id="cons-{{ provider }}">
-                        <div class="card card-body card-sm">
-                            <ul class="list-unstyled mb-0">
-                                {% for con in data.cons %}
-                                <li class="text-warning">
-                                    <i class="fas fa-exclamation-circle"></i> {{ con }}
-                                </li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
+    <div class="mt-4 text-sm text-slate-600">
+      <h6 class="font-medium text-slate-800 mb-2">Important Notes</h6>
+      <ul class="list-disc list-inside space-y-1">
+        <li>Prices are estimates based on 24/7 usage and may vary by region.</li>
+        <li>Actual costs may differ based on data transfer, additional services, and usage patterns.</li>
+        <li>Consider free tiers and reserved instances for long-term cost optimization.</li>
+        <li>Storage costs are estimated at 10GB per service.</li>
+      </ul>
     </div>
-
-    <!-- Summary Section -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Cost Summary</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6>Most Cost-Effective:</h6>
-                            {% set cheapest = cost_data.values() | sort(attribute='total_monthly') | first %}
-                            <div class="alert alert-success">
-                                <strong>{{ cheapest.name }}</strong> - ${{ "%.2f"|format(cheapest.total_monthly) }}/month
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <h6>Price Range:</h6>
-                            {% set most_expensive = cost_data.values() | sort(attribute='total_monthly') | last %}
-                            <div class="alert alert-info">
-                                ${{ "%.2f"|format(cheapest.total_monthly) }} - ${{ "%.2f"|format(most_expensive.total_monthly) }}/month
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-3">
-                        <h6>Important Notes:</h6>
-                        <ul class="text-muted">
-                            <li>Prices are estimates based on 24/7 usage and may vary by region</li>
-                            <li>Actual costs may differ based on data transfer, additional services, and usage patterns</li>
-                            <li>Consider free tiers and reserved instances for long-term cost optimization</li>
-                            <li>Storage costs are estimated at 10GB per service</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+  </section>
 </div>
 
-<style>
-.cost-card {
-    transition: transform 0.2s ease-in-out;
-}
+<!-- Tiny inline JS to toggle pros/cons panels with smooth transitions -->
+<script>
+  (function(){
+    function slideToggle(el){
+      if(!el) return;
+      if(el.classList.contains('hidden')){
+        // show
+        el.classList.remove('hidden');
+        el.style.height = '0px';
+        const h = el.scrollHeight + 'px';
+        requestAnimationFrame(() => {
+          el.style.transition = 'height .28s ease, opacity .2s ease';
+          el.style.height = h;
+          el.style.opacity = '1';
+        });
+        setTimeout(()=>{ el.style.height = ''; el.style.transition = ''; }, 300);
+      } else {
+        // hide
+        el.style.height = el.scrollHeight + 'px';
+        requestAnimationFrame(() => {
+          el.style.transition = 'height .28s ease, opacity .2s ease';
+          el.style.height = '0px';
+          el.style.opacity = '0';
+        });
+        setTimeout(()=>{ el.classList.add('hidden'); el.style.height=''; el.style.transition=''; el.style.opacity=''; }, 300);
+      }
+    }
 
-.cost-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-}
+    document.querySelectorAll('.js-toggle-pros').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        const id = btn.getAttribute('data-toggle');
+        slideToggle(document.getElementById(id));
+      });
+    });
+    document.querySelectorAll('.js-toggle-cons').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        const id = btn.getAttribute('data-toggle');
+        slideToggle(document.getElementById(id));
+      });
+    });
+  })();
+</script>
 
-.cost-breakdown {
-    background-color: #f8f9fa;
-    padding: 10px;
-    border-radius: 5px;
-    font-size: 0.9em;
-}
-
-.card-sm {
-    font-size: 0.8em;
-    padding: 10px;
-}
-
-.badge {
-    font-size: 0.7em;
-}
-
-.text-success {
-    color: #28a745 !important;
-}
-
-.text-warning {
-    color: #ffc107 !important;
-}
-
-.text-primary {
-    color: #007bff !important;
-}
-
-.text-info {
-    color: #17a2b8 !important;
-}
-</style>
 {% endblock %}

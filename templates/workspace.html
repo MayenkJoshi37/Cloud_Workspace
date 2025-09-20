@@ -1,16 +1,49 @@
-{% extends 'base.html' %}
+{% extends 'base.html' %} 
 {% block title %}Create Workspace{% endblock %}
+
 {% block content %}
-<h2>New Workspace</h2>
-<form method="post" enctype="multipart/form-data">
-  <div class="mb-3">
-    <label for="name" class="form-label">Workspace Name</label>
-    <input type="text" class="form-control" id="name" name="name" required>
+<div class="min-h-[60vh] flex items-center justify-center">
+  <div class="w-full max-w-md">
+    <div class="bg-white rounded-2xl p-6 shadow-sm">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="rounded-lg p-3 bg-gradient-to-tr from-primary-500 to-accent text-white shadow-soft-lg">
+          <i class="fa-solid fa-folder-plus"></i>
+        </div>
+        <div>
+          <h2 class="text-xl font-semibold text-slate-900">Create a New Workspace</h2>
+          <p class="text-sm text-slate-500">Provide a name and upload your Docker Compose file</p>
+        </div>
+      </div>
+
+      <form method="post" enctype="multipart/form-data" class="space-y-4">
+        <!-- Workspace Name -->
+        <div>
+          <label for="name" class="block text-sm font-medium text-slate-700 mb-1">Workspace Name</label>
+          <input type="text" id="name" name="name" required
+                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
+        </div>
+
+        <!-- YAML Upload -->
+        <div>
+          <label for="yaml_file" class="block text-sm font-medium text-slate-700 mb-1">Docker Compose YAML</label>
+          <input type="file" id="yaml_file" name="yaml_file" accept=".yaml,.yml" required
+                 class="block w-full text-sm text-slate-500
+                        file:mr-4 file:py-2 file:px-3
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-medium
+                        file:bg-primary-50 file:text-primary-700
+                        hover:file:bg-primary-100 transition"/>
+          <p class="mt-1 text-xs text-slate-400">Accepted formats: .yaml, .yml</p>
+        </div>
+
+        <div>
+          <button type="submit"
+                  class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary-500 text-white font-medium hover:bg-primary-600 transition">
+            <i class="fa-solid fa-plus"></i> Create Workspace
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
-  <div class="mb-3">
-    <label for="yaml_file" class="form-label">Docker Compose YAML</label>
-    <input type="file" class="form-control" id="yaml_file" name="yaml_file" accept=".yaml,.yml" required>
-  </div>
-  <button type="submit" class="btn btn-primary">Create</button>
-</form>
+</div>
 {% endblock %}

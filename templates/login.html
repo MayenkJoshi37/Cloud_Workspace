@@ -1,16 +1,112 @@
 {% extends 'base.html' %}
 {% block title %}{{ 'Register' if register else 'Login' }}{% endblock %}
+
 {% block content %}
-<h2>{{ 'Register' if register else 'Login' }}</h2>
-<form method="post">
-  <div class="mb-3">
-    <label for="username" class="form-label">Username</label>
-    <input type="text" class="form-control" id="username" name="username" required>
+<div class="min-h-[60vh] flex items-center justify-center">
+  <div class="w-full max-w-md">
+    <div class="bg-white rounded-2xl p-6 shadow-sm">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="rounded-lg p-3 bg-gradient-to-tr from-primary-500 to-accent text-white shadow-soft-lg">
+          <i class="fa-solid fa-user"></i>
+        </div>
+        <div>
+          <h2 class="text-xl font-semibold text-slate-900">{{ 'Register' if register else 'Welcome back' }}</h2>
+          <p class="text-sm text-slate-500">
+            {% if register %}Create a new account to start using Cloud Workspaces.{% else %}Sign in to access your workspaces.{% endif %}
+          </p>
+        </div>
+      </div>
+
+      <form method="post" class="space-y-4">
+        <div>
+          <label for="username" class="block text-sm font-medium text-slate-700 mb-1">Username</label>
+          <input id="username" name="username" required
+                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
+        </div>
+
+        <div>
+          <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+          <div class="relative">
+            <input id="password" name="password" type="password" required
+                   class="w-full rounded-lg border border-slate-200 px-3 py-2 pr-10 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
+            <button type="button" id="pwToggle" aria-label="Show password"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        {% if register %}
+        <div>
+          <label for="confirm_password" class="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+          <input id="confirm_password" name="confirm_password" type="password"
+                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
+        </div>
+        {% endif %}
+
+        <div class="flex items-center justify-between text-sm">
+          <div class="flex items-center gap-2">
+            <input id="remember" name="remember" type="checkbox" class="h-4 w-4 rounded border-slate-200 text-primary-600 focus:ring-primary-500">
+            <label for="remember" class="text-slate-600">Remember me</label>
+          </div>
+
+          <div>
+            <a href="{{ url_for('dashboard') if not register else url_for('login') }}" class="text-sm text-primary-600 hover:underline">Forgot?</a>
+          </div>
+        </div>
+
+        <div>
+          <button type="submit"
+                  class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary-500 text-white font-medium hover:bg-primary-600 transition">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i>
+            {{ 'Register' if register else 'Login' }}
+          </button>
+        </div>
+      </form>
+
+      <div class="mt-4 text-center text-sm text-slate-500">
+        {% if register %}
+          Already have an account? <a href="{{ url_for('login') }}" class="text-primary-600 font-medium hover:underline">Login</a>
+        {% else %}
+          New here? <a href="{{ url_for('register') }}" class="text-primary-600 font-medium hover:underline">Create account</a>
+        {% endif %}
+      </div>
+
+      <!-- Optional social sign-in (visual only) -->
+      <div class="mt-5">
+        <div class="relative text-center">
+          <span class="bg-white px-3 text-xs text-slate-400">or</span>
+          <div class="absolute inset-x-0 top-1/2 border-t border-slate-100"></div>
+        </div>
+
+        <div class="mt-4 flex gap-3">
+          <button class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm hover:shadow-sm transition">
+            <i class="fa-brands fa-google text-red-500"></i> Google
+          </button>
+          <button class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm hover:shadow-sm transition">
+            <i class="fa-brands fa-github"></i> GitHub
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="mb-3">
-    <label for="password" class="form-label">Password</label>
-    <input type="password" class="form-control" id="password" name="password" required>
-  </div>
-  <button type="submit" class="btn btn-primary">{{ 'Register' if register else 'Login' }}</button>
-</form>
+</div>
+
+<!-- Password toggle JS -->
+<script>
+  (function(){
+    const pw = document.getElementById('password');
+    const btn = document.getElementById('pwToggle');
+    if(!pw || !btn) return;
+    btn.addEventListener('click', ()=>{
+      if(pw.type === 'password'){
+        pw.type = 'text';
+        btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+      } else {
+        pw.type = 'password';
+        btn.innerHTML = '<i class="fa-solid fa-eye"></i>';
+      }
+    });
+  })();
+</script>
 {% endblock %}

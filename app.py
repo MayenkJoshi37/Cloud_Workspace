@@ -1,6 +1,6 @@
-from flask import (Flask, render_template, request, redirect, url_for, flash, current_app)
+from flask import Flask, render_template, request, redirect, url_for, flash, current_app, abort
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import (LoginManager, UserMixin, login_user, logout_user, login_required, current_user)
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import os, subprocess, uuid, yaml
@@ -24,6 +24,7 @@ class Workspace(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False)
     yaml_filename = db.Column(db.String(128), nullable=False)
+    env_filename = db.Column(db.String(128), nullable=True)  # NEW
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     status = db.Column(db.String(32), default="stopped")
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -37,7 +38,10 @@ login_manager.login_view = "login"
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        return db.session.get(User, int(user_id))
+    except Exception:
+        return None
 
 with app.app_context():
     db.create_all()
@@ -120,25 +124,91 @@ def dashboard():
 def create_workspace():
     if request.method == "POST":
         name = request.form["name"]
-        file = request.files["yaml_file"]
-        if not file:
+        compose_file = request.files.get("yaml_file")
+        env_file = request.files.get("env_file")
+
+        if not compose_file:
             flash("YAML file required", "danger")
             return redirect(url_for("create_workspace"))
-        filename = f"{uuid.uuid4()}_{file.filename}"
+
+        # Save compose file
+        compose_filename = f"{uuid.uuid4()}_{compose_file.filename}"
         os.makedirs(current_app.config["UPLOAD_FOLDER"], exist_ok=True)
-        path = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
-        file.save(path)
-        ws = Workspace(name=name, yaml_filename=filename, user_id=current_user.id)
+        compose_path = os.path.join(current_app.config["UPLOAD_FOLDER"], compose_filename)
+        compose_file.save(compose_path)
+
+        env_filename = None
+        ws = Workspace(
+            name=name,
+            yaml_filename=compose_filename,
+            user_id=current_user.id
+        )
         db.session.add(ws)
-        db.session.commit()
+        db.session.commit()  # ✅ Save first to get ws.id
+
+        if env_file:
+            env_filename = f"{uuid.uuid4()}_{env_file.filename}"
+            env_path = os.path.join(current_app.config["UPLOAD_FOLDER"], env_filename)
+            env_file.save(env_path)
+            ws.env_filename = env_filename
+            db.session.commit()
+
+            # Use ws.id to create build folder
+            build_dir = os.path.join(
+                current_app.config["UPLOAD_FOLDER"],
+                f"build_{ws.id}"
+            )
+            os.makedirs(build_dir, exist_ok=True)
+
+            # Write Dockerfile with conda setup
+            with open(os.path.join(build_dir, "Dockerfile"), "w") as df:
+                df.write("""FROM codercom/code-server:latest
+
+# Install system dependencies
+USER root
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends wget bzip2 ca-certificates curl git && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Miniconda
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && \
+    bash miniconda.sh -b -p /opt/conda && \
+    rm miniconda.sh
+
+ENV PATH=/opt/conda/bin:$PATH
+
+# Copy environment.yml and create conda environment
+COPY environment.yml /tmp/environment.yml
+
+# Accept Anaconda Terms of Service before installing
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+RUN conda env create -f /tmp/environment.yml -n workspace_env && \
+    conda clean -afy
+
+# Activate environment by default
+SHELL ["/bin/bash", "-lc"]
+RUN echo "source /opt/conda/etc/profile.d/conda.sh && conda activate workspace_env" >> /home/coder/.bashrc
+
+USER coder
+WORKDIR /home/coder/project
+""")
+
+            import shutil
+            shutil.copy(env_path, os.path.join(build_dir, "environment.yml"))
+
         flash("Workspace created successfully", "success")
         return redirect(url_for("dashboard"))
+
     return render_template("workspace.html")
 
 @app.route("/workspace/run/<int:id>")
 @login_required
 def run_workspace(id):
-    ws = Workspace.query.get_or_404(id)
+    ws = db.session.get(Workspace, id)
+    if ws is None:
+        abort(404)
     if ws.user_id != current_user.id:
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
@@ -149,10 +219,19 @@ def run_workspace(id):
         return redirect(url_for("dashboard"))
 
     project_name = f"workspace_{ws.id}"
+
+    # 🔹 Add this block before subprocess.run
+    if ws.env_filename:
+        build_dir = os.path.join(
+            current_app.config["UPLOAD_FOLDER"],
+            f"build_{ws.id}"
+        )
+        patch_compose_with_build(path, build_dir)
+
     try:
         result = subprocess.run(
             ["docker-compose", "-p", project_name, "-f", path, "up", "-d"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=600,
             cwd=os.path.dirname(path)
         )
         if result.returncode == 0:
@@ -173,7 +252,9 @@ def run_workspace(id):
 @app.route("/workspace/stop/<int:id>")
 @login_required
 def stop_workspace(id):
-    ws = Workspace.query.get_or_404(id)
+    ws = db.session.get(Workspace, id)
+    if ws is None:
+        abort(404)
     if ws.user_id != current_user.id:
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
@@ -209,7 +290,9 @@ def stop_workspace(id):
 @app.route("/workspace/delete/<int:id>")
 @login_required
 def delete_workspace(id):
-    ws = Workspace.query.get_or_404(id)
+    ws = db.session.get(Workspace, id)
+    if ws is None:
+        abort(404)
     try:
         os.remove(os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename))
     except Exception:
@@ -222,7 +305,9 @@ def delete_workspace(id):
 @app.route("/workspace/refresh-status/<int:id>")
 @login_required
 def refresh_workspace_status(id):
-    ws = Workspace.query.get_or_404(id)
+    ws = db.session.get(Workspace, id)
+    if ws is None:
+        abort(404)
     if ws.user_id != current_user.id:
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
@@ -324,7 +409,9 @@ def calculate_cloud_costs(resources):
 @app.route("/workspace/cost-comparison/<int:id>")
 @login_required
 def cost_comparison(id):
-    ws = Workspace.query.get_or_404(id)
+    ws = db.session.get(Workspace, id)
+    if ws is None:
+        abort(404)
     if ws.user_id != current_user.id:
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
@@ -337,5 +424,18 @@ def cost_comparison(id):
     return render_template("cost_comparison.html",
                            workspace=ws, resources=resources, cost_data=cost_data)
 
+def patch_compose_with_build(compose_path, build_dir):
+    import yaml
+    with open(compose_path) as f:
+        data = yaml.safe_load(f)
+
+    for svc, cfg in data.get("services", {}).items():
+        if "code" in svc or "code-server" in str(cfg.get("image", "")):
+            cfg.pop("image", None)
+            cfg["build"] = build_dir
+
+    with open(compose_path, "w") as f:
+        yaml.safe_dump(data, f)
+
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=True)

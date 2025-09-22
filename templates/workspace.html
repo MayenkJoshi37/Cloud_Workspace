@@ -22,7 +22,7 @@
           <input type="text" id="name" name="name" required
                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
         </div>
-
+      
         <!-- YAML Upload -->
         <div>
           <label for="yaml_file" class="block text-sm font-medium text-slate-700 mb-1">Docker Compose YAML</label>
@@ -35,7 +35,20 @@
                         hover:file:bg-primary-100 transition"/>
           <p class="mt-1 text-xs text-slate-400">Accepted formats: .yaml, .yml</p>
         </div>
-
+      
+        <!-- Environment.yml Upload (NEW) -->
+        <div>
+          <label for="env_file" class="block text-sm font-medium text-slate-700 mb-1">Conda Environment (environment.yml)</label>
+          <input type="file" id="env_file" name="env_file" accept=".yaml,.yml"
+                 class="block w-full text-sm text-slate-500
+                        file:mr-4 file:py-2 file:px-3
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-medium
+                        file:bg-primary-50 file:text-primary-700
+                        hover:file:bg-primary-100 transition"/>
+          <p class="mt-1 text-xs text-slate-400">Optional. Upload a Conda environment.yml to preinstall dependencies.</p>
+        </div>
+      
         <div>
           <button type="submit"
                   class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary-500 text-white font-medium hover:bg-primary-600 transition">
@@ -43,6 +56,7 @@
           </button>
         </div>
       </form>
+      
     </div>
   </div>
 </div>

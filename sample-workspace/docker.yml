@@ -1,8 +1,6 @@
-version: '3'
 services:
   codeserver:
     image: codercom/code-server:latest
-    container_name: codeserver
     environment:
       - PASSWORD=123456789
     ports:
@@ -14,4 +12,4 @@ services:
       - 0.0.0.0:8443
       - --disable-telemetry
     volumes:
-      - ./project:/home/coder/project   # optional workspace mount
+      - ./project:/home/coder/project

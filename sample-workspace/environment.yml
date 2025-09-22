@@ -1,0 +1,8 @@
+name: demo-env
+dependencies:
+  - python=3.10
+  - pip
+  - numpy=1.25
+  - pandas=2.1
+  - pip:
+    - fastapi

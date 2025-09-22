@@ -12,7 +12,6 @@ class Config:
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(os.getcwd(), "uploads"))
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024
 
-
 db = SQLAlchemy()
 
 class User(UserMixin, db.Model):

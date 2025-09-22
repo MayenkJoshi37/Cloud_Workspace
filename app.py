@@ -6,11 +6,12 @@ from datetime import datetime
 import os, subprocess, uuid, yaml
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY") or "your-secret-key-here"
-    SQLALCHEMY_DATABASE_URI = "sqlite:///cloud_workspaces.db"
+    SECRET_KEY = os.environ.get("SECRET_KEY") or "dev-secret"
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///cloud_workspaces.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
+    UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(os.getcwd(), "uploads"))
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024
+
 
 db = SQLAlchemy()
 

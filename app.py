@@ -5,6 +5,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import os, subprocess, uuid, yaml
 
+_db_url = os.environ.get("DATABASE_URL")
+if _db_url and _db_url.startswith("postgres://"):
+    os.environ["DATABASE_URL"] = _db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY") or "dev-secret"
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///cloud_workspaces.db")

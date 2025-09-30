@@ -60,20 +60,27 @@ def register():
     if request.method == "POST":
         u = request.form.get("username", "").strip()
         p = request.form.get("password", "")
+        cp = request.form.get("confirm_password", "")
         if not u or not p:
             flash("Provide username and password", "danger")
             return redirect(url_for("register"))
-
+        if p != cp:
+            flash("Passwords do not match", "danger")
+            return redirect(url_for("register"))
         if mongo.db.users.find_one({"username": u}):
             flash("Username exists", "danger")
             return redirect(url_for("register"))
 
         pw_hash = generate_password_hash(p)
-        user_doc = {"username": u, "password_hash": pw_hash, "created_at": datetime.utcnow()}
-        res = mongo.db.users.insert_one(user_doc)
+        mongo.db.users.insert_one({
+            "username": u,
+            "password_hash": pw_hash,
+            "created_at": datetime.utcnow()
+        })
         flash("Registered! Please log in.", "success")
         return redirect(url_for("login"))
     return render_template("login.html", register=True)
+
 
 @app.route("/auth/login", methods=["GET", "POST"])
 def login():
@@ -307,7 +314,7 @@ def stop_workspace(id):
 
     return redirect(url_for("dashboard"))
 
-@app.route("/workspace/delete/<string:id>")
+@app.route("/workspace/delete/<string:id>", methods=["POST"])
 @login_required
 def delete_workspace(id):
     ws = _get_workspace_or_404(id)

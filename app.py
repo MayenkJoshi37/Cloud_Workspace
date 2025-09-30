@@ -1,91 +1,89 @@
+# app.py — MongoDB (Atlas) version
 import os
-import shutil
 import subprocess
 import uuid
 import yaml
+import shutil
 from datetime import datetime
+from types import SimpleNamespace
+
 from flask import Flask, render_template, request, redirect, url_for, flash, current_app, abort
-from flask_sqlalchemy import SQLAlchemy
+from flask_pymongo import PyMongo
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+from bson.objectid import ObjectId
 
-# --------------------- DATABASE CONFIG ---------------------
-_db_url = os.environ.get("DATABASE_URL")
-if _db_url and _db_url.startswith("postgres://"):
-    _db_url = _db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-
+# ----------------- CONFIG -----------------
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY") or "dev-secret"
-    SQLALCHEMY_DATABASE_URI = _db_url or "sqlite:///cloud_workspaces.db"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        "connect_args": {"sslmode": "require"}  # SSL fix for Supabase
-    }
+    MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/cloud_workspace")
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER", os.path.join(os.getcwd(), "uploads"))
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024
 
-# --------------------- APP INIT ---------------------
 app = Flask(__name__)
 app.config.from_object(Config)
 
-db = SQLAlchemy(app)
+# ----------------- MONGO & LOGIN -----------------
+mongo = PyMongo(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
-# --------------------- MODELS ---------------------
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(64), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
-    workspaces = db.relationship("Workspace", backref="owner", lazy=True)
+# lightweight user wrapper for Flask-Login
+class MongoUser(UserMixin):
+    def __init__(self, doc):
+        self.doc = doc
+        self.id = str(doc["_id"])
+        self.username = doc.get("username")
 
-class Workspace(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(128), nullable=False)
-    yaml_filename = db.Column(db.String(128), nullable=False)
-    env_filename = db.Column(db.String(128), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(32), default="stopped")
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    def get_id(self):
+        return self.id
 
-# --------------------- LOGIN MANAGER ---------------------
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        return db.session.get(User, int(user_id))
+        doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+        if doc:
+            return MongoUser(doc)
     except Exception:
         return None
 
-# --------------------- CREATE TABLES ---------------------
+# Ensure unique index on username
 with app.app_context():
-    db.create_all()
+    try:
+        mongo.db.users.create_index("username", unique=True)
+    except Exception:
+        pass
 
-# --------------------- AUTH ROUTES ---------------------
+# ----------------- AUTH -----------------
 @app.route("/auth/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        u, p = request.form["username"], request.form["password"]
-        if User.query.filter_by(username=u).first():
+        u = request.form.get("username", "").strip()
+        p = request.form.get("password", "")
+        if not u or not p:
+            flash("Provide username and password", "danger")
+            return redirect(url_for("register"))
+
+        if mongo.db.users.find_one({"username": u}):
             flash("Username exists", "danger")
             return redirect(url_for("register"))
-        user = User(username=u, password_hash=generate_password_hash(p))
-        db.session.add(user)
-        db.session.commit()
-        flash("Registered!", "success")
+
+        pw_hash = generate_password_hash(p)
+        user_doc = {"username": u, "password_hash": pw_hash, "created_at": datetime.utcnow()}
+        res = mongo.db.users.insert_one(user_doc)
+        flash("Registered! Please log in.", "success")
         return redirect(url_for("login"))
     return render_template("login.html", register=True)
 
 @app.route("/auth/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        u, p = request.form["username"], request.form["password"]
-        try:
-            user = User.query.filter_by(username=u).first()
-            if user and check_password_hash(user.password_hash, p):
-                login_user(user)
-                return redirect(url_for("dashboard"))
-        except Exception as e:
-            current_app.logger.error(f"Login DB error: {e}")
+        u = request.form.get("username", "").strip()
+        p = request.form.get("password", "")
+        user_doc = mongo.db.users.find_one({"username": u})
+        if user_doc and check_password_hash(user_doc.get("password_hash", ""), p):
+            login_user(MongoUser(user_doc))
+            return redirect(url_for("dashboard"))
         flash("Invalid username or password", "danger")
     return render_template("login.html", register=False)
 
@@ -96,90 +94,129 @@ def logout():
     flash("Logged out", "info")
     return redirect(url_for("login"))
 
-# --------------------- HOME ---------------------
 @app.route("/")
 def home():
     return render_template("login.html", register=False)
 
-# --------------------- DASHBOARD ---------------------
+# ----------------- DASHBOARD -----------------
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    user_workspaces = Workspace.query.filter_by(user_id=current_user.id).all()
-    for ws in user_workspaces:
-        if not getattr(ws, "yaml_filename", None):
+    # fetch workspaces for the current user and convert to simple objects so templates can use ws.id
+    cursor = mongo.db.workspaces.find({"user_id": current_user.get_id()})
+    workspaces = []
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+
+    for ws_doc in cursor:
+        ws_obj = SimpleNamespace(
+            id=str(ws_doc["_id"]),
+            name=ws_doc.get("name"),
+            yaml_filename=ws_doc.get("yaml_filename"),
+            env_filename=ws_doc.get("env_filename"),
+            status=ws_doc.get("status", "stopped"),
+            created_at=ws_doc.get("created_at")
+        )
+
+        # check file presence & docker-compose status
+        if not ws_obj.yaml_filename:
+            workspaces.append(ws_obj)
             continue
-        path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
+
+        path = os.path.join(upload_folder, ws_obj.yaml_filename)
         if not os.path.exists(path):
-            if ws.status != "stopped":
-                ws.status = "stopped"
-                db.session.commit()
+            if ws_obj.status != "stopped":
+                mongo.db.workspaces.update_one({"_id": ObjectId(ws_obj.id)}, {"$set": {"status": "stopped"}})
+                ws_obj.status = "stopped"
+            workspaces.append(ws_obj)
             continue
-        project_name = f"workspace_{ws.id}"
+
+        project_name = f"workspace_{ws_obj.id}"
         try:
             result = subprocess.run(
                 ["docker-compose", "-p", project_name, "-f", path, "ps", "-q"],
-                capture_output=True, text=True,
-                cwd=os.path.dirname(path)
+                capture_output=True, text=True, cwd=os.path.dirname(path)
             )
             is_running = (result.returncode == 0 and result.stdout.strip() != "")
             new_status = "running" if is_running else "stopped"
-            if ws.status != new_status:
-                ws.status = new_status
-                db.session.commit()
+            if new_status != ws_obj.status:
+                mongo.db.workspaces.update_one({"_id": ObjectId(ws_obj.id)}, {"$set": {"status": new_status}})
+                ws_obj.status = new_status
         except Exception as e:
-            current_app.logger.error(f"Error checking status for {ws.name}: {str(e)}")
-            if ws.status != "stopped":
-                ws.status = "stopped"
-                db.session.commit()
-    workspaces = Workspace.query.filter_by(user_id=current_user.id).all()
+            current_app.logger.error(f"Status check error for {ws_obj.name}: {e}")
+            if ws_obj.status != "stopped":
+                mongo.db.workspaces.update_one({"_id": ObjectId(ws_obj.id)}, {"$set": {"status": "stopped"}})
+                ws_obj.status = "stopped"
+
+        workspaces.append(ws_obj)
+
     return render_template("dashboard.html", workspaces=workspaces)
 
-# --------------------- WORKSPACE CRUD ---------------------
+# ----------------- WORKSPACE CREATE -----------------
 @app.route("/workspace/create", methods=["GET", "POST"])
 @login_required
 def create_workspace():
     if request.method == "POST":
-        name = request.form["name"]
+        name = request.form.get("name", "").strip()
         compose_file = request.files.get("yaml_file")
         env_file = request.files.get("env_file")
-        if not compose_file:
-            flash("YAML file required", "danger")
+
+        if not name or not compose_file:
+            flash("Name and YAML file are required", "danger")
             return redirect(url_for("create_workspace"))
 
-        os.makedirs(current_app.config["UPLOAD_FOLDER"], exist_ok=True)
+        upload_folder = current_app.config["UPLOAD_FOLDER"]
+        os.makedirs(upload_folder, exist_ok=True)
+
         compose_filename = f"{uuid.uuid4()}_{compose_file.filename}"
-        compose_path = os.path.join(current_app.config["UPLOAD_FOLDER"], compose_filename)
+        compose_path = os.path.join(upload_folder, compose_filename)
         compose_file.save(compose_path)
 
-        ws = Workspace(name=name, yaml_filename=compose_filename, user_id=current_user.id)
-        db.session.add(ws)
-        db.session.commit()
+        ws_doc = {
+            "name": name,
+            "yaml_filename": compose_filename,
+            "env_filename": None,
+            "created_at": datetime.utcnow(),
+            "status": "stopped",
+            "user_id": current_user.get_id()
+        }
+        res = mongo.db.workspaces.insert_one(ws_doc)
+        ws_id_str = str(res.inserted_id)
 
         if env_file:
             env_filename = f"{uuid.uuid4()}_{env_file.filename}"
-            env_path = os.path.join(current_app.config["UPLOAD_FOLDER"], env_filename)
+            env_path = os.path.join(upload_folder, env_filename)
             env_file.save(env_path)
-            ws.env_filename = env_filename
-            db.session.commit()
+            mongo.db.workspaces.update_one({"_id": ObjectId(ws_id_str)}, {"$set": {"env_filename": env_filename}})
 
-            build_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"build_{ws.id}")
+            # prepare build dir and Dockerfile
+            build_dir = os.path.join(upload_folder, f"build_{ws_id_str}")
             os.makedirs(build_dir, exist_ok=True)
-
-            with open(os.path.join(build_dir, "Dockerfile"), "w") as df:
+            dockerfile_path = os.path.join(build_dir, "Dockerfile")
+            with open(dockerfile_path, "w") as df:
                 df.write("""FROM codercom/code-server:latest
+
 USER root
-RUN apt-get update -y && apt-get install -y wget bzip2 ca-certificates curl git && apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && bash miniconda.sh -b -p /opt/conda && rm miniconda.sh
+RUN apt-get update -y && apt-get install -y --no-install-recommends wget bzip2 ca-certificates curl git && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && \
+    bash miniconda.sh -b -p /opt/conda && rm miniconda.sh
+
 ENV PATH=/opt/conda/bin:$PATH
+
 COPY environment.yml /tmp/environment.yml
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 RUN conda env create -f /tmp/environment.yml -n workspace_env && conda clean -afy
+
 SHELL ["/bin/bash", "-lc"]
 RUN echo "source /opt/conda/etc/profile.d/conda.sh && conda activate workspace_env" >> /home/coder/.bashrc
-USER coder
-WORKDIR /home/coder/project""")
 
+USER coder
+WORKDIR /home/coder/project
+""")
             shutil.copy(env_path, os.path.join(build_dir, "environment.yml"))
 
         flash("Workspace created successfully", "success")
@@ -187,22 +224,33 @@ WORKDIR /home/coder/project""")
 
     return render_template("workspace.html")
 
-# --------------------- RUN / STOP / DELETE WORKSPACE ---------------------
-@app.route("/workspace/run/<int:id>")
+# ----------------- RUN / STOP / DELETE / REFRESH -----------------
+def _get_workspace_or_404(ws_id):
+    try:
+        doc = mongo.db.workspaces.find_one({"_id": ObjectId(ws_id)})
+        if not doc:
+            abort(404)
+        return doc
+    except Exception:
+        abort(404)
+
+@app.route("/workspace/run/<string:id>")
 @login_required
 def run_workspace(id):
-    ws = db.session.get(Workspace, id)
-    if not ws or ws.user_id != current_user.id:
+    ws = _get_workspace_or_404(id)
+    if ws["user_id"] != current_user.get_id():
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
+
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws["yaml_filename"])
     if not os.path.exists(path):
         flash("Workspace file not found", "danger")
         return redirect(url_for("dashboard"))
 
-    project_name = f"workspace_{ws.id}"
-    if ws.env_filename:
-        build_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"build_{ws.id}")
+    project_name = f"workspace_{id}"
+
+    if ws.get("env_filename"):
+        build_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"build_{id}")
         patch_compose_with_build(path, build_dir)
 
     try:
@@ -211,56 +259,102 @@ def run_workspace(id):
             capture_output=True, text=True, timeout=600,
             cwd=os.path.dirname(path)
         )
-        ws.status = "running" if result.returncode == 0 else "stopped"
-        db.session.commit()
-        flash("Workspace is running" if result.returncode == 0 else f"Failed: {result.stderr}", "success" if result.returncode == 0 else "danger")
+        if result.returncode == 0:
+            mongo.db.workspaces.update_one({"_id": ObjectId(id)}, {"$set": {"status": "running"}})
+            flash("Workspace is running", "success")
+        else:
+            current_app.logger.error(f"docker-compose up failed: {result.stderr}")
+            flash(f"Failed: {result.stderr}", "danger")
+    except subprocess.TimeoutExpired:
+        flash("Timeout starting workspace", "warning")
     except Exception as e:
-        current_app.logger.error(f"Error starting workspace {ws.name}: {e}")
+        current_app.logger.error(f"Error starting workspace {ws.get('name')}: {e}")
         flash(f"Error: {str(e)}", "danger")
+
     return redirect(url_for("dashboard"))
 
-@app.route("/workspace/stop/<int:id>")
+@app.route("/workspace/stop/<string:id>")
 @login_required
 def stop_workspace(id):
-    ws = db.session.get(Workspace, id)
-    if not ws or ws.user_id != current_user.id:
+    ws = _get_workspace_or_404(id)
+    if ws["user_id"] != current_user.get_id():
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
+
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws["yaml_filename"])
     if not os.path.exists(path):
         flash("Workspace file not found", "danger")
         return redirect(url_for("dashboard"))
-    project_name = f"workspace_{ws.id}"
+
+    project_name = f"workspace_{id}"
     try:
-        result = subprocess.run(["docker-compose", "-p", project_name, "-f", path, "down"],
-                                capture_output=True, text=True, timeout=60,
-                                cwd=os.path.dirname(path))
-        ws.status = "stopped"
-        db.session.commit()
-        flash("Workspace stopped", "info")
+        result = subprocess.run(
+            ["docker-compose", "-p", project_name, "-f", path, "down"],
+            capture_output=True, text=True, timeout=60,
+            cwd=os.path.dirname(path)
+        )
+        if result.returncode == 0:
+            mongo.db.workspaces.update_one({"_id": ObjectId(id)}, {"$set": {"status": "stopped"}})
+            flash("Workspace stopped", "info")
+        else:
+            current_app.logger.error(f"docker-compose down failed: {result.stderr}")
+            flash(f"Failed: {result.stderr}", "danger")
+    except subprocess.TimeoutExpired:
+        flash("Timeout stopping workspace", "warning")
     except Exception as e:
-        current_app.logger.error(f"Error stopping workspace {ws.name}: {e}")
+        current_app.logger.error(f"Error stopping workspace {ws.get('name')}: {e}")
         flash(f"Error: {str(e)}", "danger")
+
     return redirect(url_for("dashboard"))
 
-@app.route("/workspace/delete/<int:id>")
+@app.route("/workspace/delete/<string:id>")
 @login_required
 def delete_workspace(id):
-    ws = db.session.get(Workspace, id)
-    if not ws:
-        abort(404)
+    ws = _get_workspace_or_404(id)
     try:
-        os.remove(os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename))
-        if ws.env_filename:
-            os.remove(os.path.join(current_app.config["UPLOAD_FOLDER"], ws.env_filename))
+        os.remove(os.path.join(current_app.config["UPLOAD_FOLDER"], ws["yaml_filename"]))
     except Exception:
         pass
-    db.session.delete(ws)
-    db.session.commit()
+    # remove build dir if exists
+    try:
+        build_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"build_{id}")
+        if os.path.isdir(build_dir):
+            shutil.rmtree(build_dir)
+    except Exception:
+        pass
+    mongo.db.workspaces.delete_one({"_id": ObjectId(id)})
     flash("Workspace deleted", "warning")
     return redirect(url_for("dashboard"))
 
-# --------------------- DOCKER COMPOSE ANALYSIS & COST ---------------------
+@app.route("/workspace/refresh-status/<string:id>")
+@login_required
+def refresh_workspace_status(id):
+    ws = _get_workspace_or_404(id)
+    if ws["user_id"] != current_user.get_id():
+        flash("Access denied", "danger")
+        return redirect(url_for("dashboard"))
+
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws["yaml_filename"])
+    if not os.path.exists(path):
+        flash("Workspace file not found", "danger")
+        return redirect(url_for("dashboard"))
+
+    project_name = f"workspace_{id}"
+    try:
+        result = subprocess.run(
+            ["docker-compose", "-p", project_name, "-f", path, "ps", "-q"],
+            capture_output=True, text=True, cwd=os.path.dirname(path)
+        )
+        new_status = "running" if (result.returncode == 0 and result.stdout.strip()) else "stopped"
+        mongo.db.workspaces.update_one({"_id": ObjectId(id)}, {"$set": {"status": new_status}})
+        flash(f"Workspace is {new_status}", "info")
+    except Exception as e:
+        current_app.logger.error(f"Error checking status for {ws.get('name')}: {e}")
+        flash(f"Error checking status: {str(e)}", "danger")
+
+    return redirect(url_for("dashboard"))
+
+# ----------------- COST ANALYSIS (unchanged logic) -----------------
 def analyze_docker_compose_resources(yaml_path):
     try:
         with open(yaml_path, "r") as file:
@@ -276,16 +370,13 @@ def analyze_docker_compose_resources(yaml_path):
                         cpu = float(limits["cpus"])
                     if "memory" in limits:
                         m = limits["memory"]
-                        if m.endswith("G"):
-                            mem = float(m[:-1])
-                        elif m.endswith("M"):
-                            mem = float(m[:-1]) / 1024
-                        elif m.endswith("K"):
-                            mem = float(m[:-1]) / (1024*1024)
+                        if isinstance(m, str):
+                            if m.endswith("G"): mem = float(m[:-1])
+                            elif m.endswith("M"): mem = float(m[:-1]) / 1024
+                            elif m.endswith("K"): mem = float(m[:-1]) / (1024*1024)
                 cpu = cpu or 1.0
                 mem = mem or 1.0
-                total_cpu += cpu
-                total_memory += mem
+                total_cpu += cpu; total_memory += mem
                 services.append({"name": name, "cpu": cpu, "memory": mem})
         return {
             "total_cpu": total_cpu,
@@ -332,48 +423,45 @@ def calculate_cloud_costs(resources):
             monthly = hourly * 24 * 30
             total = monthly + data["storage"] * storage
             results[provider] = {
-                "name": data["name"],
-                "instance_type": best,
-                "hourly_cost": hourly,
-                "monthly_cost": monthly,
+                "name": data["name"], "instance_type": best,
+                "hourly_cost": hourly, "monthly_cost": monthly,
                 "storage_cost": data["storage"] * storage,
                 "total_monthly": total,
             }
     return results
 
-@app.route("/workspace/cost-comparison/<int:id>")
+@app.route("/workspace/cost-comparison/<string:id>")
 @login_required
 def cost_comparison(id):
-    ws = db.session.get(Workspace, id)
-    if ws is None:
-        abort(404)
-    if ws.user_id != current_user.id:
+    ws = _get_workspace_or_404(id)
+    if ws["user_id"] != current_user.get_id():
         flash("Access denied", "danger")
         return redirect(url_for("dashboard"))
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws.yaml_filename)
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], ws["yaml_filename"])
     if not os.path.exists(path):
         flash("Workspace file not found", "danger")
         return redirect(url_for("dashboard"))
     resources = analyze_docker_compose_resources(path)
     cost_data = calculate_cloud_costs(resources)
-    return render_template(
-        "cost_comparison.html",
-        workspace=ws,
-        resources=resources,
-        cost_data=cost_data
-    )
+    # convert ws to simple object for template convenience
+    ws_obj = SimpleNamespace(id=str(ws["_id"]), name=ws.get("name"), yaml_filename=ws.get("yaml_filename"),
+                             env_filename=ws.get("env_filename"), status=ws.get("status"))
+    return render_template("cost_comparison.html", workspace=ws_obj, resources=resources, cost_data=cost_data)
 
-# --------------------- PATCH COMPOSE ---------------------
+# ----------------- HELPER: patch compose -----------------
 def patch_compose_with_build(compose_path, build_dir):
-    with open(compose_path) as f:
-        data = yaml.safe_load(f)
-    for svc, cfg in data.get("services", {}).items():
-        if "code" in svc or "code-server" in str(cfg.get("image", "")):
-            cfg.pop("image", None)
-            cfg["build"] = build_dir
-    with open(compose_path, "w") as f:
-        yaml.safe_dump(data, f)
+    import yaml as _yaml
+    try:
+        with open(compose_path) as f:
+            data = _yaml.safe_load(f) or {}
+        for svc, cfg in data.get("services", {}).items():
+            if "code" in svc or "code-server" in str(cfg.get("image", "")):
+                cfg.pop("image", None)
+                cfg["build"] = build_dir
+        with open(compose_path, "w") as f:
+            _yaml.safe_dump(data, f)
+    except Exception as e:
+        current_app.logger.error(f"Error patching compose: {e}")
 
-# --------------------- MAIN ---------------------
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

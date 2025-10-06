@@ -17,17 +17,17 @@
         </div>
       </div>
 
-      <form method="post" class="space-y-4">
+      <form id="loginForm" class="space-y-4" onsubmit="return false;">
         <div>
-          <label for="username" class="block text-sm font-medium text-slate-700 mb-1">Username</label>
-          <input id="username" name="username" required
+          <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+          <input id="email" type="email" required
                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
         </div>
 
         <div>
           <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
           <div class="relative">
-            <input id="password" name="password" type="password" required
+            <input id="password" type="password" required
                    class="w-full rounded-lg border border-slate-200 px-3 py-2 pr-10 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
             <button type="button" id="pwToggle" aria-label="Show password"
                     class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700">
@@ -36,43 +36,18 @@
           </div>
         </div>
 
-        {% if register %}
         <div>
-          <label for="confirm_password" class="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
-          <input id="confirm_password" name="confirm_password" type="password"
-                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 transition" />
-        </div>
-        {% endif %}
-
-        <div class="flex items-center justify-between text-sm">
-          <div class="flex items-center gap-2">
-            <input id="remember" name="remember" type="checkbox" class="h-4 w-4 rounded border-slate-200 text-primary-600 focus:ring-primary-500">
-            <label for="remember" class="text-slate-600">Remember me</label>
-          </div>
-
-          <div>
-            <a href="{{ url_for('dashboard') if not register else url_for('login') }}" class="text-sm text-primary-600 hover:underline">Forgot?</a>
-          </div>
-        </div>
-
-        <div>
-          <button type="submit"
+          <button id="loginBtn"
                   class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary-500 text-white font-medium hover:bg-primary-600 transition">
-            <i class="fa-solid fa-arrow-right-to-bracket"></i>
-            {{ 'Register' if register else 'Login' }}
+            <i class="fa-solid fa-arrow-right-to-bracket"></i> Login
           </button>
         </div>
       </form>
 
       <div class="mt-4 text-center text-sm text-slate-500">
-        {% if register %}
-          Already have an account? <a href="{{ url_for('login') }}" class="text-primary-600 font-medium hover:underline">Login</a>
-        {% else %}
-          New here? <a href="{{ url_for('register') }}" class="text-primary-600 font-medium hover:underline">Create account</a>
-        {% endif %}
+        New here? <a href="#" id="registerLink" class="text-primary-600 font-medium hover:underline">Create account</a>
       </div>
 
-      <!-- Optional social sign-in (visual only) -->
       <div class="mt-5">
         <div class="relative text-center">
           <span class="bg-white px-3 text-xs text-slate-400">or</span>
@@ -80,11 +55,9 @@
         </div>
 
         <div class="mt-4 flex gap-3">
-          <button class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm hover:shadow-sm transition">
+          <button id="googleBtn"
+                  class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm hover:shadow-sm transition">
             <i class="fa-brands fa-google text-red-500"></i> Google
-          </button>
-          <button class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm hover:shadow-sm transition">
-            <i class="fa-brands fa-github"></i> GitHub
           </button>
         </div>
       </div>
@@ -92,21 +65,66 @@
   </div>
 </div>
 
-<!-- Password toggle JS -->
-<script>
-  (function(){
-    const pw = document.getElementById('password');
-    const btn = document.getElementById('pwToggle');
-    if(!pw || !btn) return;
-    btn.addEventListener('click', ()=>{
-      if(pw.type === 'password'){
-        pw.type = 'text';
-        btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
-      } else {
-        pw.type = 'password';
-        btn.innerHTML = '<i class="fa-solid fa-eye"></i>';
-      }
+<!-- Firebase Auth -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBDekzwfLNMiwxD2zT6zU6zl2DYaa_PosA",
+    authDomain: "cccp-f70e5.firebaseapp.com",
+    projectId: "cccp-f70e5",
+    storageBucket: "cccp-f70e5.firebasestorage.app",
+    messagingSenderId: "462350593543",
+    appId: "1:462350593543:web:22c818f1a06d6e3ebcc4a2"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
+  async function sendTokenToBackend(idToken) {
+    await fetch("/auth/token-login", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + idToken }
+    }).then(r => {
+      if (r.redirected) window.location.href = r.url;
     });
-  })();
+  }
+
+  document.getElementById('loginBtn').onclick = async () => {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value.trim();
+    const user = await signInWithEmailAndPassword(auth, email, password);
+    const idToken = await user.user.getIdToken();
+    await sendTokenToBackend(idToken);
+  };
+
+  document.getElementById('registerLink').onclick = async () => {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value.trim();
+    const user = await createUserWithEmailAndPassword(auth, email, password);
+    const idToken = await user.user.getIdToken();
+    await sendTokenToBackend(idToken);
+  };
+
+  document.getElementById('googleBtn').onclick = async () => {
+    const result = await signInWithPopup(auth, provider);
+    const idToken = await result.user.getIdToken();
+    await sendTokenToBackend(idToken);
+  };
+
+  // Password toggle
+  const pw = document.getElementById('password');
+  const btn = document.getElementById('pwToggle');
+  btn.addEventListener('click', () => {
+    if (pw.type === 'password') {
+      pw.type = 'text';
+      btn.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+    } else {
+      pw.type = 'password';
+      btn.innerHTML = '<i class="fa-solid fa-eye"></i>';
+    }
+  });
 </script>
 {% endblock %}
